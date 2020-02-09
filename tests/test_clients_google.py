@@ -15,8 +15,9 @@ def test_google_oauth2():
     assert client.refresh_token_endpoint == "https://oauth2.googleapis.com/token"
     assert client.revoke_token_endpoint == "https://accounts.google.com/o/oauth2/revoke"
     assert client.base_scopes == [
-        "https://www.googleapis.com/auth/userinfo.profile",
-        "https://www.googleapis.com/auth/userinfo.email",
+        "openid",
+        "email",
+        "profile"
     ]
     assert client.name == "google"
 
