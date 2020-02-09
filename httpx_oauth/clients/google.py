@@ -1,7 +1,9 @@
-from typing import Any, Dict, Tuple, cast
+from typing import Any, Dict, Tuple, cast, Optional
 
 import httpx
 from typing_extensions import Literal, TypedDict
+from google.oauth2 import id_token
+from google.auth.transport import requests
 
 from httpx_oauth.errors import GetIdEmailError
 from httpx_oauth.oauth2 import BaseOAuth2
@@ -10,10 +12,22 @@ AUTHORIZE_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 ACCESS_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 REVOKE_TOKEN_ENDPOINT = "https://accounts.google.com/o/oauth2/revoke"
 BASE_SCOPES = [
-    "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/userinfo.email",
+    "openid",
+    "email",
+    "profile"
 ]
-PROFILE_ENDPOINT = "https://people.googleapis.com/v1/people/me"
+PROFILE_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
+
+
+class GoogleParsedIdToken(TypedDict, total=False):
+    """ Decoded JWT. Optionals depend on scopes used to optain the token """
+    iss: str
+    azp: str
+    aud: str
+    sub: str
+    email: Optional[str]
+    email_verified: Optional[bool]
+    name: Optional[str]
 
 
 class GoogleOAuth2AuthorizeParams(TypedDict, total=False):
@@ -36,23 +50,19 @@ class GoogleOAuth2(BaseOAuth2[GoogleOAuth2AuthorizeParams]):
             base_scopes=BASE_SCOPES,
         )
 
+    def verify_oauth2_token(self, token: str) -> GoogleParsedIdToken:
+        request = requests.Request()
+        id_info = id_token.verify_oauth2_token(
+            token, request, self.client_id)
+
+        if id_info['iss'] != 'https://accounts.google.com':
+            raise ValueError('Wrong issuer.')
+        return GoogleParsedIdToken(**id_info)
+
     async def get_id_email(self, token: str) -> Tuple[str, str]:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                PROFILE_ENDPOINT,
-                params={"personFields": "emailAddresses", "key": token},
-            )
+        id_info = self.verify_oauth2_token(token=token)
+        user_id = id_info['sub']
+        user_email = id_info['email']
+        user_verified = id_info['email_verified']
 
-            if response.status_code >= 400:
-                raise GetIdEmailError(response.json())
-
-            data = cast(Dict[str, Any], response.json())
-
-            user_id = data["resourceName"]
-            user_email = next(
-                email["value"]
-                for email in data["emailAddresses"]
-                if email["metadata"]["primary"]
-            )
-
-            return user_id, user_email
+        return user_id, (user_email if user_verified else None)

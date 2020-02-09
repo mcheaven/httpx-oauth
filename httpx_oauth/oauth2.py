@@ -99,6 +99,8 @@ class BaseOAuth2(Generic[T]):
 
         if scope is not None:
             params["scope"] = " ".join(scope)
+        elif self.base_scopes is not None:
+            params["scope"] = " ".join(self.base_scopes)
 
         if extras_params is not None:
             params = {**params, **extras_params}  # type: ignore
